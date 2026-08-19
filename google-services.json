@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "572382048768",
+    "project_id": "clinic-booking-app-2fa5a",
+    "storage_bucket": "clinic-booking-app-2fa5a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:572382048768:android:89e3c1f283c8ec10fadee5",
+        "android_client_info": {
+          "package_name": "com.krishnaclinic.booking"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCazeC1EGlKChcswyVa6tZcoh4QQO4Zje8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

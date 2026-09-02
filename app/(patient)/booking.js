@@ -14,6 +14,7 @@ import { createBooking, getDailyStatus } from "../../src/api/bookingApi";
 import BeneficiaryPickerModal from "../../src/components/BeneficiaryPickerModal";
 import DatePickerRow from "../../src/components/DatePickerRow";
 import QueueScheduleTable from "../../src/components/QueueScheduleTable";
+import ResponsiveContainer from "../../src/components/ResponsiveContainer";
 import { AuthContext } from "../../src/context/AuthContext";
 import { fireLocalBookingConfirmation } from "../../src/notifications/pushNotifications";
 import { colors } from "../../src/theme/colors";
@@ -35,12 +36,14 @@ export default function BookingScreen() {
   const [beneficiariesLoading, setBeneficiariesLoading] = useState(true);
   const [beneficiariesError, setBeneficiariesError] = useState(null);
 
-  const [selectedBeneficiary, setSelectedBeneficiary] = useState(null);
+  // Now an array - multi-select, instead of a single selected beneficiary object.
+  const [selectedBeneficiaries, setSelectedBeneficiaries] = useState([]);
   const [pickerVisible, setPickerVisible] = useState(false);
 
   const [booking, setBooking] = useState(false);
   const [bookingError, setBookingError] = useState(null);
-  const [bookingResult, setBookingResult] = useState(null);
+  // Now an array of per-beneficiary outcomes instead of a single result.
+  const [bookingResults, setBookingResults] = useState(null);
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -91,83 +94,131 @@ export default function BookingScreen() {
     setBookingError(null);
   };
 
+  /**
+   * Books each selected beneficiary ONE AT A TIME, in order, awaiting
+   * each before starting the next - this is what makes their queue
+   * numbers land close together (e.g. 5, 6, 7), since each call sees
+   * the previous one's already-incremented count. Not a single atomic
+   * backend transaction covering all of them - if someone else's
+   * booking request happens to land in between two of these calls,
+   * the numbers could have a gap. Acceptable given the requirement is
+   * "close together," not "guaranteed strictly consecutive."
+   */
   const handleBook = async () => {
-    if (!selectedBeneficiary) {
-      setBookingError("Select a beneficiary first.");
+    if (selectedBeneficiaries.length === 0) {
+      setBookingError("Select at least one beneficiary first.");
       return;
     }
     setBooking(true);
     setBookingError(null);
-    try {
-      const result = await createBooking(
-        token,
-        selectedBeneficiary.id,
-        selectedDate,
-      );
-      if (result.data.status === "SUCCESS") {
-        setBookingResult({ queueNumber: result.data.queueNumber });
-        loadStatus(selectedDate);
-        fireLocalBookingConfirmation(
-          result.data.queueNumber,
-          ARRIVAL_WINDOW_TEXT,
-        );
-      } else if (result.data.status === "ALREADY_BOOKED") {
-        setBookingError(
-          `${selectedBeneficiary.name} already has a booking for ${formatDisplayDate(selectedDate)}.`,
-        );
-      } else if (result.data.status === "CAP_REACHED") {
-        setBookingError("All slots for that date are full.");
-        loadStatus(selectedDate);
-      } else if (result.data.status === "INVALID_DATE") {
-        setBookingError(
-          result.data.message || "That date is not available for booking.",
-        );
-      } else if (result.data.status === "NOT_FOUND") {
-        setBookingError(
-          "That beneficiary could not be found. Please try again.",
-        );
+
+    const results = [];
+    for (const beneficiary of selectedBeneficiaries) {
+      try {
+        const result = await createBooking(token, beneficiary.id, selectedDate);
+        if (result.data.status === "SUCCESS") {
+          results.push({
+            beneficiary,
+            status: "SUCCESS",
+            queueNumber: result.data.queueNumber,
+          });
+          fireLocalBookingConfirmation(
+            result.data.queueNumber,
+            ARRIVAL_WINDOW_TEXT,
+          );
+        } else if (result.data.status === "ALREADY_BOOKED") {
+          results.push({
+            beneficiary,
+            status: "ALREADY_BOOKED",
+            message: `${beneficiary.name} already has a booking for ${formatDisplayDate(selectedDate)}.`,
+          });
+        } else if (result.data.status === "CAP_REACHED") {
+          results.push({
+            beneficiary,
+            status: "CAP_REACHED",
+            message: "Slots became full while booking.",
+          });
+        } else if (result.data.status === "INVALID_DATE") {
+          results.push({
+            beneficiary,
+            status: "INVALID_DATE",
+            message: result.data.message || "That date is not available.",
+          });
+        } else if (result.data.status === "NOT_FOUND") {
+          results.push({
+            beneficiary,
+            status: "NOT_FOUND",
+            message: "Beneficiary could not be found.",
+          });
+        }
+      } catch (err) {
+        results.push({ beneficiary, status: "ERROR", message: err.message });
       }
-    } catch (err) {
-      setBookingError(err.message);
-    } finally {
-      setBooking(false);
     }
+
+    setBookingResults(results);
+    loadStatus(selectedDate);
+    setBooking(false);
   };
 
   const handleBookAnother = () => {
-    setBookingResult(null);
-    setSelectedBeneficiary(null);
+    setBookingResults(null);
+    setSelectedBeneficiaries([]);
     setBookingError(null);
   };
 
-  if (bookingResult) {
-    return (
-      <View style={styles.resultContainer}>
-        <Text style={styles.resultQueueLabel}>You're</Text>
-        <Text style={styles.resultQueueNumber}>
-          #{bookingResult.queueNumber}
-        </Text>
-        <Text style={styles.resultArrival}>
-          Arrive between {ARRIVAL_WINDOW_TEXT}
-        </Text>
-        <Text style={styles.resultDate}>{formatDisplayDate(selectedDate)}</Text>
-        <Text style={styles.resultBeneficiaryName}>
-          Booked for: {selectedBeneficiary?.name}
-        </Text>
+  const pickerButtonLabel = () => {
+    if (selectedBeneficiaries.length === 0) return "Select beneficiaries";
+    if (selectedBeneficiaries.length <= 2)
+      return selectedBeneficiaries.map((b) => b.name).join(", ");
+    return `${selectedBeneficiaries.length} beneficiaries selected`;
+  };
 
-        <TouchableOpacity
-          style={styles.primaryButton}
-          onPress={handleBookAnother}
-        >
-          <Text style={styles.primaryButtonText}>Book Another Beneficiary</Text>
-        </TouchableOpacity>
-      </View>
+  if (bookingResults) {
+    return (
+      <ScrollView
+        style={styles.resultOuterScroll}
+        contentContainerStyle={styles.resultOuter}
+      >
+        <ResponsiveContainer style={styles.resultContainer}>
+          <Text style={styles.resultDate}>
+            {formatDisplayDate(selectedDate)}
+          </Text>
+
+          {bookingResults.map((r, index) => (
+            <View key={index} style={styles.resultRow}>
+              <Text style={styles.resultBeneficiaryName}>
+                {r.beneficiary.name}
+              </Text>
+              {r.status === "SUCCESS" ? (
+                <>
+                  <Text style={styles.resultQueueNumber}>#{r.queueNumber}</Text>
+                  <Text style={styles.resultArrival}>
+                    Arrive between {ARRIVAL_WINDOW_TEXT}
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.resultErrorText}>{r.message}</Text>
+              )}
+            </View>
+          ))}
+
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={handleBookAnother}
+          >
+            <Text style={styles.primaryButtonText}>
+              Book More Beneficiaries
+            </Text>
+          </TouchableOpacity>
+        </ResponsiveContainer>
+      </ScrollView>
     );
   }
 
   return (
     <ScrollView
-      style={styles.container}
+      style={styles.outerScroll}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -176,94 +227,102 @@ export default function BookingScreen() {
         />
       }
     >
-      <Text style={styles.title}>Book an Appointment</Text>
+      <ResponsiveContainer style={styles.container}>
+        <Text style={styles.title}>Book an Appointment</Text>
 
-      <Text style={styles.label}>Date</Text>
-      <DatePickerRow selectedDate={selectedDate} onSelect={handleSelectDate} />
-
-      <QueueScheduleTable date={selectedDate} />
-
-      <View style={styles.statusCard}>
-        {statusLoading ? (
-          <ActivityIndicator color={colors.primary} />
-        ) : statusError ? (
-          <Text style={styles.errorText}>{statusError}</Text>
-        ) : (
-          <>
-            <Text style={styles.statusDate}>
-              {formatDisplayDate(selectedDate)}
-            </Text>
-            <Text style={styles.statusCount}>
-              {status.patientBookedCount} / {status.patientCap} booked
-            </Text>
-            {status.patientSlotsFull && (
-              <Text style={styles.statusFullText}>
-                Slots full for this date.
-              </Text>
-            )}
-          </>
-        )}
-      </View>
-
-      <Text style={styles.label}>Beneficiary</Text>
-      {beneficiariesLoading ? (
-        <ActivityIndicator
-          color={colors.primary}
-          style={styles.beneficiaryLoader}
+        <Text style={styles.label}>Date</Text>
+        <DatePickerRow
+          selectedDate={selectedDate}
+          onSelect={handleSelectDate}
         />
-      ) : beneficiariesError ? (
-        <Text style={styles.errorText}>{beneficiariesError}</Text>
-      ) : (
-        <TouchableOpacity
-          style={styles.pickerButton}
-          onPress={() => setPickerVisible(true)}
-        >
-          <Text
-            style={
-              selectedBeneficiary
-                ? styles.pickerButtonText
-                : styles.pickerPlaceholderText
-            }
-          >
-            {selectedBeneficiary
-              ? selectedBeneficiary.name
-              : "Select a beneficiary"}
-          </Text>
-        </TouchableOpacity>
-      )}
 
-      {bookingError && <Text style={styles.formErrorText}>{bookingError}</Text>}
+        <QueueScheduleTable date={selectedDate} />
 
-      <TouchableOpacity
-        style={[
-          styles.primaryButton,
-          (booking || status?.patientSlotsFull) && styles.primaryButtonDisabled,
-        ]}
-        onPress={handleBook}
-        disabled={booking || status?.patientSlotsFull}
-      >
-        {booking ? (
-          <ActivityIndicator color="#fff" />
+        <View style={styles.statusCard}>
+          {statusLoading ? (
+            <ActivityIndicator color={colors.primary} />
+          ) : statusError ? (
+            <Text style={styles.errorText}>{statusError}</Text>
+          ) : (
+            <>
+              <Text style={styles.statusDate}>
+                {formatDisplayDate(selectedDate)}
+              </Text>
+              <Text style={styles.statusCount}>
+                {status.patientBookedCount} / {status.patientCap} booked
+              </Text>
+              {status.patientSlotsFull && (
+                <Text style={styles.statusFullText}>
+                  Slots full for this date.
+                </Text>
+              )}
+            </>
+          )}
+        </View>
+
+        <Text style={styles.label}>Beneficiaries</Text>
+        {beneficiariesLoading ? (
+          <ActivityIndicator
+            color={colors.primary}
+            style={styles.beneficiaryLoader}
+          />
+        ) : beneficiariesError ? (
+          <Text style={styles.errorText}>{beneficiariesError}</Text>
         ) : (
-          <Text style={styles.primaryButtonText}>Book</Text>
+          <TouchableOpacity
+            style={styles.pickerButton}
+            onPress={() => setPickerVisible(true)}
+          >
+            <Text
+              style={
+                selectedBeneficiaries.length > 0
+                  ? styles.pickerButtonText
+                  : styles.pickerPlaceholderText
+              }
+            >
+              {pickerButtonLabel()}
+            </Text>
+          </TouchableOpacity>
         )}
-      </TouchableOpacity>
 
-      <BeneficiaryPickerModal
-        visible={pickerVisible}
-        onClose={() => setPickerVisible(false)}
-        beneficiaries={beneficiaries}
-        onSelect={setSelectedBeneficiary}
-        onBeneficiaryAdded={(created) =>
-          setBeneficiaries((prev) => [...prev, created])
-        }
-      />
+        {bookingError && (
+          <Text style={styles.formErrorText}>{bookingError}</Text>
+        )}
+
+        <TouchableOpacity
+          style={[
+            styles.primaryButton,
+            (booking || status?.patientSlotsFull) &&
+              styles.primaryButtonDisabled,
+          ]}
+          onPress={handleBook}
+          disabled={booking || status?.patientSlotsFull}
+        >
+          {booking ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.primaryButtonText}>Book</Text>
+          )}
+        </TouchableOpacity>
+
+        <BeneficiaryPickerModal
+          visible={pickerVisible}
+          onClose={() => setPickerVisible(false)}
+          beneficiaries={beneficiaries}
+          selectedIds={selectedBeneficiaries.map((b) => b.id)}
+          onConfirm={setSelectedBeneficiaries}
+          onBeneficiaryAdded={(created) =>
+            setBeneficiaries((prev) => [...prev, created])
+          }
+        />
+      </ResponsiveContainer>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, padding: 24 },
+  outerScroll: { flex: 1, backgroundColor: colors.background },
+  container: { padding: 24 },
   title: {
     fontSize: 22,
     fontWeight: "700",
@@ -317,25 +376,25 @@ const styles = StyleSheet.create({
   primaryButtonDisabled: { opacity: 0.6 },
   primaryButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
 
-  resultContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
-    justifyContent: "center",
+  resultOuterScroll: { flex: 1, backgroundColor: colors.background },
+  resultOuter: { flexGrow: 1, justifyContent: "center", padding: 24 },
+  resultContainer: { alignItems: "center" },
+  resultDate: { fontSize: 16, color: colors.textSecondary, marginBottom: 20 },
+  resultRow: {
+    width: "100%",
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 12,
     alignItems: "center",
-    padding: 24,
   },
-  resultQueueLabel: { fontSize: 20, color: colors.textSecondary },
-  resultQueueNumber: {
-    fontSize: 72,
-    fontWeight: "800",
-    color: colors.primary,
-    marginVertical: 8,
-  },
-  resultArrival: { fontSize: 18, color: colors.textPrimary, marginBottom: 4 },
-  resultDate: { fontSize: 14, color: colors.textSecondary, marginBottom: 4 },
   resultBeneficiaryName: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 32,
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.textPrimary,
+    marginBottom: 6,
   },
+  resultQueueNumber: { fontSize: 40, fontWeight: "800", color: colors.primary },
+  resultArrival: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
+  resultErrorText: { fontSize: 14, color: colors.error, textAlign: "center" },
 });

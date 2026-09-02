@@ -1,15 +1,24 @@
+import { useEffect, useState } from "react";
 import {
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity
 } from "react-native";
+import { getHolidayDates } from "../api/bookingApi";
 import { colors } from "../theme/colors";
 import { getBookableDates } from "../utils/date";
 
-/** A row of the next 7 bookable days. Sundays are shown but disabled/unselectable - matches the backend's rejection, not a substitute for it. */
+/** Now also fetches the admin-managed holiday list once on mount, and greys out any date chip that matches - same visual treatment as Sundays already got. */
 export default function DatePickerRow({ selectedDate, onSelect }) {
   const dates = getBookableDates();
+  const [holidayDates, setHolidayDates] = useState([]);
+
+  useEffect(() => {
+    getHolidayDates()
+      .then(setHolidayDates)
+      .catch(() => setHolidayDates([])); // fail silently - worst case, a holiday date just isn't greyed out client-side; the backend still rejects it if tapped
+  }, []);
 
   return (
     <ScrollView
@@ -19,7 +28,8 @@ export default function DatePickerRow({ selectedDate, onSelect }) {
     >
       {dates.map((d) => {
         const isSelected = d.iso === selectedDate;
-        const disabled = d.isSunday;
+        const isHoliday = holidayDates.includes(d.iso);
+        const disabled = d.isSunday || isHoliday;
 
         return (
           <TouchableOpacity

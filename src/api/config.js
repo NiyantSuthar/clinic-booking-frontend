@@ -10,7 +10,7 @@
 // USE_LOCAL_BACKEND = false -> uses the real Render URL (works from
 //   anywhere, on any network - phone doesn't need to be near your PC at all)
 // ---------------------------------------------------------------------------
-const USE_LOCAL_BACKEND = true;
+const USE_LOCAL_BACKEND = false;
 
 // Update this if your LAN IP changes (e.g. after reconnecting to Wi-Fi,
 // or a new DHCP lease) - same as before, find it via `ipconfig` on
@@ -18,6 +18,6 @@ const USE_LOCAL_BACKEND = true;
 const LOCAL_URL = "http://192.168.1.11:8080";
 
 // Your real, permanently-live backend on Render.
-const PRODUCTION_URL = "https://clinic-booking-app-99hn.onrender.com";
+const PRODUCTION_URL = "https://clinic-booking-app-fnkk.onrender.com/";
 
 export const API_BASE_URL = USE_LOCAL_BACKEND ? LOCAL_URL : PRODUCTION_URL;

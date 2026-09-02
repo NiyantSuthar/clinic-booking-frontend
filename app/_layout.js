@@ -1,6 +1,7 @@
-import { Stack } from 'expo-router';
-import { AuthProvider } from '../src/context/AuthContext';
-import AuthGate from '../src/navigation/AuthGate';
+import { Stack } from "expo-router";
+import ProxyBlockerModal from "../src/components/ProxyBlockerModal";
+import { AuthProvider } from "../src/context/AuthContext";
+import AuthGate from "../src/navigation/AuthGate";
 
 /**
  * Expo Router's root layout - this replaces App.js + NavigationContainer
@@ -11,10 +12,12 @@ import AuthGate from '../src/navigation/AuthGate';
  */
 export default function RootLayout() {
   return (
+    <ProxyBlockerModal>
     <AuthProvider>
       <AuthGate>
         <Stack screenOptions={{ headerShown: false }} />
       </AuthGate>
     </AuthProvider>
+    </ProxyBlockerModal>
   );
 }

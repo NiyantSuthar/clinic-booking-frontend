@@ -19,7 +19,6 @@ export async function getDailyStatus(date, signal) {
   return data;
 }
 
-/** Client change #2 - the "when should I arrive" table data. */
 export async function getQueueSchedule(date) {
   const response = await fetch(`${API_BASE_URL}/bookings/queue-schedule?date=${date}`);
   const data = await parseJsonSafe(response);
@@ -57,4 +56,14 @@ export async function getBookingHistory(token) {
     throw new Error(data?.error || 'Could not load booking history.');
   }
   return data;
+}
+
+/** New - raw list of holiday dates (ISO strings), used to grey out the date picker. Public, no auth needed. */
+export async function getHolidayDates() {
+  const response = await fetch(`${API_BASE_URL}/bookings/holidays`);
+  const data = await parseJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(data?.error || 'Could not load holiday list.');
+  }
+  return data; // array of 'YYYY-MM-DD' strings
 }

@@ -14,21 +14,27 @@ import {
   View,
 } from "react-native";
 import {
+  addHoliday,
   createWalkInBooking,
   downloadTodayPdf,
+  getHolidays,
   getTodayBookings,
+  removeHoliday,
 } from "../src/api/adminApi";
 import Logo from "../src/components/Logo";
 import { AuthContext } from "../src/context/AuthContext";
 import { colors } from "../src/theme/colors";
+import { MAX_CONTENT_WIDTH } from "../src/theme/layout";
 
 const PHONE_REGEX = /^[0-9]{10}$/;
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 export default function AdminHomeScreen() {
   const { token, logout } = useContext(AuthContext);
 
-  const [view, setView] = useState("LIST");
+  const [view, setView] = useState("LIST"); // 'LIST' | 'ADD' | 'HOLIDAYS'
 
+  // ---- Today's list ----
   const [bookings, setBookings] = useState([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState(null);
@@ -48,12 +54,6 @@ export default function AdminHomeScreen() {
     }
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      if (view === "LIST") loadToday();
-    }, [view]),
-  );
-
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadToday();
@@ -71,41 +71,38 @@ export default function AdminHomeScreen() {
     }
   };
 
+  // ---- New Booking form ----
   const [name, setName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [village, setVillage] = useState("");
   const [nameError, setNameError] = useState(null);
   const [phoneError, setPhoneError] = useState(null);
+  const [villageError, setVillageError] = useState(null);
   const [formError, setFormError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState(null);
 
-  const resetForm = () => {
+  const resetBookingForm = () => {
     setName("");
     setPhoneNumber("");
+    setVillage("");
     setNameError(null);
     setPhoneError(null);
+    setVillageError(null);
     setFormError(null);
     setSuccessMessage(null);
-  };
-
-  const handleSwitchToAdd = () => {
-    resetForm();
-    setView("ADD");
-  };
-
-  const handleSwitchToList = () => {
-    resetForm();
-    setView("LIST");
   };
 
   const handleSubmitBooking = async () => {
     setNameError(null);
     setPhoneError(null);
+    setVillageError(null);
     setFormError(null);
     setSuccessMessage(null);
 
     const trimmedName = name.trim();
     const trimmedPhone = phoneNumber.trim();
+    const trimmedVillage = village.trim();
 
     let hasError = false;
     if (!trimmedName) {
@@ -116,6 +113,10 @@ export default function AdminHomeScreen() {
       setPhoneError("Enter a valid 10-digit phone number.");
       hasError = true;
     }
+    if (!trimmedVillage) {
+      setVillageError("Village is required.");
+      hasError = true;
+    }
     if (hasError) return;
 
     setSubmitting(true);
@@ -124,21 +125,114 @@ export default function AdminHomeScreen() {
         token,
         trimmedName,
         trimmedPhone,
+        trimmedVillage,
       );
       if (result.data.status === "SUCCESS") {
         setSuccessMessage(`Booked - Queue #${result.data.queueNumber}`);
         setName("");
         setPhoneNumber("");
+        setVillage("");
       } else if (result.data.status === "ALREADY_BOOKED") {
         setFormError("This patient already has a booking for today.");
       } else if (result.data.status === "CAP_REACHED") {
         setFormError("Admin cap reached for today - no more slots available.");
+      } else if (result.data.status === "INVALID_DATE") {
+        setFormError(
+          result.data.message || "Today is not available for booking.",
+        );
       }
     } catch (err) {
       setFormError(err.message);
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // ---- Holidays ----
+  const [holidays, setHolidays] = useState([]);
+  const [holidaysLoading, setHolidaysLoading] = useState(true);
+  const [holidaysError, setHolidaysError] = useState(null);
+  const [removingHolidayId, setRemovingHolidayId] = useState(null);
+
+  const [newHolidayDate, setNewHolidayDate] = useState("");
+  const [newHolidayReason, setNewHolidayReason] = useState("");
+  const [holidayDateError, setHolidayDateError] = useState(null);
+  const [holidayFormError, setHolidayFormError] = useState(null);
+  const [addingHoliday, setAddingHoliday] = useState(false);
+
+  const loadHolidays = async () => {
+    setHolidaysLoading(true);
+    setHolidaysError(null);
+    try {
+      const data = await getHolidays(token);
+      setHolidays(data);
+    } catch (err) {
+      setHolidaysError(err.message);
+    } finally {
+      setHolidaysLoading(false);
+    }
+  };
+
+  const handleAddHoliday = async () => {
+    setHolidayDateError(null);
+    setHolidayFormError(null);
+
+    const trimmedDate = newHolidayDate.trim();
+    if (!DATE_REGEX.test(trimmedDate)) {
+      setHolidayDateError("Enter a date as YYYY-MM-DD, e.g. 2026-08-29.");
+      return;
+    }
+
+    setAddingHoliday(true);
+    try {
+      const created = await addHoliday(
+        token,
+        trimmedDate,
+        newHolidayReason.trim(),
+      );
+      setHolidays((prev) =>
+        [...prev, created].sort((a, b) => a.date.localeCompare(b.date)),
+      );
+      setNewHolidayDate("");
+      setNewHolidayReason("");
+    } catch (err) {
+      setHolidayFormError(err.message);
+    } finally {
+      setAddingHoliday(false);
+    }
+  };
+
+  const handleRemoveHoliday = (holiday) => {
+    Alert.alert("Remove holiday", `Reopen booking for ${holiday.date}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: async () => {
+          setRemovingHolidayId(holiday.id);
+          try {
+            await removeHoliday(token, holiday.id);
+            setHolidays((prev) => prev.filter((h) => h.id !== holiday.id));
+          } catch (err) {
+            Alert.alert("Could not remove", err.message);
+          } finally {
+            setRemovingHolidayId(null);
+          }
+        },
+      },
+    ]);
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      if (view === "LIST") loadToday();
+      if (view === "HOLIDAYS") loadHolidays();
+    }, [view]),
+  );
+
+  const handleSwitchView = (target) => {
+    resetBookingForm();
+    setView(target);
   };
 
   const renderBookingItem = ({ item }) => (
@@ -175,6 +269,28 @@ export default function AdminHomeScreen() {
     </View>
   );
 
+  const renderHolidayItem = ({ item }) => (
+    <View style={styles.holidayRow}>
+      <View style={styles.holidayInfo}>
+        <Text style={styles.holidayDate}>{item.date}</Text>
+        {!!item.reason && (
+          <Text style={styles.holidayReason}>{item.reason}</Text>
+        )}
+      </View>
+      <TouchableOpacity
+        onPress={() => handleRemoveHoliday(item)}
+        disabled={removingHolidayId === item.id}
+        style={styles.removeHolidayButton}
+      >
+        {removingHolidayId === item.id ? (
+          <ActivityIndicator color={colors.error} size="small" />
+        ) : (
+          <Text style={styles.removeHolidayText}>Remove</Text>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
@@ -191,7 +307,7 @@ export default function AdminHomeScreen() {
             styles.segmentButton,
             view === "LIST" && styles.segmentButtonActive,
           ]}
-          onPress={handleSwitchToList}
+          onPress={() => handleSwitchView("LIST")}
         >
           <Text
             style={[
@@ -199,7 +315,7 @@ export default function AdminHomeScreen() {
               view === "LIST" && styles.segmentTextActive,
             ]}
           >
-            Today's List
+            Today
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -207,7 +323,7 @@ export default function AdminHomeScreen() {
             styles.segmentButton,
             view === "ADD" && styles.segmentButtonActive,
           ]}
-          onPress={handleSwitchToAdd}
+          onPress={() => handleSwitchView("ADD")}
         >
           <Text
             style={[
@@ -218,9 +334,25 @@ export default function AdminHomeScreen() {
             New Booking
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.segmentButton,
+            view === "HOLIDAYS" && styles.segmentButtonActive,
+          ]}
+          onPress={() => handleSwitchView("HOLIDAYS")}
+        >
+          <Text
+            style={[
+              styles.segmentText,
+              view === "HOLIDAYS" && styles.segmentTextActive,
+            ]}
+          >
+            Holidays
+          </Text>
+        </TouchableOpacity>
       </View>
 
-      {view === "LIST" ? (
+      {view === "LIST" && (
         <>
           <TouchableOpacity
             style={[styles.pdfButton, pdfDownloading && styles.buttonDisabled]}
@@ -267,7 +399,9 @@ export default function AdminHomeScreen() {
             />
           )}
         </>
-      ) : (
+      )}
+
+      {view === "ADD" && (
         <KeyboardAvoidingView
           style={styles.flex}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -304,6 +438,21 @@ export default function AdminHomeScreen() {
               <Text style={styles.fieldErrorText}>{phoneError}</Text>
             )}
 
+            <Text style={styles.label}>Village (Gam)</Text>
+            <TextInput
+              style={[styles.input, villageError && styles.inputError]}
+              placeholder="Patient's village"
+              value={village}
+              onChangeText={(text) => {
+                setVillage(text);
+                setVillageError(null);
+              }}
+              editable={!submitting}
+            />
+            {villageError && (
+              <Text style={styles.fieldErrorText}>{villageError}</Text>
+            )}
+
             {formError && <Text style={styles.errorText}>{formError}</Text>}
             {successMessage && (
               <Text style={styles.successText}>{successMessage}</Text>
@@ -321,6 +470,92 @@ export default function AdminHomeScreen() {
               )}
             </TouchableOpacity>
           </View>
+        </KeyboardAvoidingView>
+      )}
+
+      {view === "HOLIDAYS" && (
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          {holidaysLoading ? (
+            <ActivityIndicator
+              color={colors.primary}
+              size="large"
+              style={{ marginTop: 40 }}
+            />
+          ) : holidaysError ? (
+            <Text style={styles.errorText}>{holidaysError}</Text>
+          ) : (
+            <FlatList
+              data={holidays}
+              keyExtractor={(item) => String(item.id)}
+              renderItem={renderHolidayItem}
+              contentContainerStyle={styles.holidayListContent}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>No holidays marked yet.</Text>
+              }
+              ListFooterComponent={
+                <View style={styles.holidayForm}>
+                  <Text style={styles.holidayFormTitle}>
+                    Mark a new holiday
+                  </Text>
+
+                  <Text style={styles.label}>Date</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      holidayDateError && styles.inputError,
+                    ]}
+                    placeholder="YYYY-MM-DD, e.g. 2026-08-29"
+                    placeholderTextColor={colors.textSecondary}
+                    value={newHolidayDate}
+                    onChangeText={(text) => {
+                      setNewHolidayDate(text);
+                      setHolidayDateError(null);
+                    }}
+                    editable={!addingHoliday}
+                  />
+                  {holidayDateError && (
+                    <Text style={styles.fieldErrorText}>
+                      {holidayDateError}
+                    </Text>
+                  )}
+
+                  <Text style={styles.label}>Reason (optional)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. Diwali, Doctor unavailable"
+                    placeholderTextColor={colors.textSecondary}
+                    value={newHolidayReason}
+                    onChangeText={setNewHolidayReason}
+                    editable={!addingHoliday}
+                  />
+
+                  {holidayFormError && (
+                    <Text style={styles.errorText}>{holidayFormError}</Text>
+                  )}
+
+                  <TouchableOpacity
+                    style={[
+                      styles.submitButton,
+                      addingHoliday && styles.buttonDisabled,
+                    ]}
+                    onPress={handleAddHoliday}
+                    disabled={addingHoliday}
+                  >
+                    {addingHoliday ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.submitButtonText}>
+                        Mark as Holiday
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              }
+            />
+          )}
         </KeyboardAvoidingView>
       )}
     </View>
@@ -350,6 +585,9 @@ const styles = StyleSheet.create({
   segmentRow: {
     flexDirection: "row",
     margin: 16,
+    maxWidth: MAX_CONTENT_WIDTH,
+    width: "100%",
+    alignSelf: "center",
     backgroundColor: colors.surfaceMuted,
     borderRadius: 10,
     padding: 4,
@@ -361,12 +599,15 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   segmentButtonActive: { backgroundColor: colors.primary },
-  segmentText: { fontSize: 14, fontWeight: "600", color: colors.textSecondary },
+  segmentText: { fontSize: 13, fontWeight: "600", color: colors.textSecondary },
   segmentTextActive: { color: "#fff" },
 
   pdfButton: {
     marginHorizontal: 16,
     marginBottom: 12,
+    maxWidth: MAX_CONTENT_WIDTH,
+    width: "100%",
+    alignSelf: "center",
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: 8,
@@ -376,9 +617,20 @@ const styles = StyleSheet.create({
   pdfButtonText: { color: colors.primary, fontSize: 14, fontWeight: "600" },
   buttonDisabled: { opacity: 0.6 },
 
-  listContent: { paddingHorizontal: 16, paddingBottom: 24 },
+  listContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+    maxWidth: MAX_CONTENT_WIDTH,
+    width: "100%",
+    alignSelf: "center",
+  },
   emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  emptyText: { color: colors.textDisabled, fontSize: 15 },
+  emptyText: {
+    color: colors.textDisabled,
+    fontSize: 15,
+    textAlign: "center",
+    marginVertical: 16,
+  },
   errorText: {
     color: colors.error,
     fontSize: 14,
@@ -416,7 +668,12 @@ const styles = StyleSheet.create({
   bookedBySelfText: { color: colors.success },
   bookedByAdminText: { color: colors.primaryDark },
 
-  formContainer: { padding: 20 },
+  formContainer: {
+    padding: 20,
+    maxWidth: MAX_CONTENT_WIDTH,
+    width: "100%",
+    alignSelf: "center",
+  },
   label: {
     fontSize: 14,
     color: colors.textSecondary,
@@ -448,4 +705,37 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   submitButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+
+  holidayListContent: {
+    padding: 16,
+    maxWidth: MAX_CONTENT_WIDTH,
+    width: "100%",
+    alignSelf: "center",
+  },
+  holidayRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 10,
+  },
+  holidayInfo: { flex: 1 },
+  holidayDate: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
+  holidayReason: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  removeHolidayButton: { paddingHorizontal: 10, paddingVertical: 6 },
+  removeHolidayText: { color: colors.error, fontSize: 14, fontWeight: "600" },
+  holidayForm: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 10,
+    padding: 16,
+    marginTop: 12,
+  },
+  holidayFormTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
 });

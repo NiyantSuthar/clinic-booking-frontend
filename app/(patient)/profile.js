@@ -1,8 +1,12 @@
+// app/(patient)/profile.js - UPDATED WITH PRIVACY & TERMS SECTION
+
 import { useFocusEffect } from "expo-router";
 import { useCallback, useContext, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,6 +20,8 @@ import {
   listBeneficiaries,
   removeBeneficiary,
 } from "../../src/api/beneficiaryApi";
+import PrivacyAndTermsSection from "../../src/components/PrivacyAndTermsSection";
+import ResponsiveContainer from "../../src/components/ResponsiveContainer";
 import { AuthContext } from "../../src/context/AuthContext";
 import { colors } from "../../src/theme/colors";
 
@@ -152,161 +158,182 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.sectionTitle}>Account</Text>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <ScrollView
+        style={styles.outerScroll}
+        keyboardShouldPersistTaps="handled"
+      >
+        <ResponsiveContainer style={styles.content}>
+          <Text style={styles.sectionTitle}>Account</Text>
 
-      <View style={styles.card}>
-        <Text style={styles.label}>Phone Number</Text>
-        {profileLoading ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: 4 }} />
-        ) : (
-          <Text style={styles.readOnlyValue}>{phoneNumber || "N/A"}</Text>
-        )}
+          <View style={styles.card}>
+            <Text style={styles.label}>Phone Number</Text>
+            {profileLoading ? (
+              <ActivityIndicator
+                color={colors.primary}
+                style={{ marginTop: 4 }}
+              />
+            ) : (
+              <Text style={styles.readOnlyValue}>{phoneNumber || "N/A"}</Text>
+            )}
 
-        {!profileLoading && (
-          <>
-            <Text style={styles.label}>Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Your name"
-              value={name}
-              onChangeText={setName}
-              editable={!saving}
+            {!profileLoading && (
+              <>
+                <Text style={styles.label}>Name</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Your name"
+                  value={name}
+                  onChangeText={setName}
+                  editable={!saving}
+                />
+
+                <Text style={styles.label}>Village (Gam)</Text>
+                <TextInput
+                  style={[styles.input, villageError && styles.inputError]}
+                  placeholder="Your village"
+                  value={village}
+                  onChangeText={(text) => {
+                    setVillage(text);
+                    setVillageError(null);
+                  }}
+                  editable={!saving}
+                />
+                {villageError && (
+                  <Text style={styles.errorText}>{villageError}</Text>
+                )}
+
+                {profileError && (
+                  <Text style={styles.errorText}>{profileError}</Text>
+                )}
+                {saveMessage && (
+                  <Text style={styles.successText}>{saveMessage}</Text>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.saveButton, saving && styles.buttonDisabled]}
+                  onPress={handleSaveProfile}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.saveButtonText}>Save</Text>
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+
+          <Text style={styles.sectionTitle}>Beneficiaries</Text>
+
+          {beneficiariesLoading ? (
+            <ActivityIndicator
+              color={colors.primary}
+              style={{ marginVertical: 12 }}
             />
+          ) : beneficiariesError ? (
+            <Text style={styles.errorText}>{beneficiariesError}</Text>
+          ) : beneficiaries.length === 0 ? (
+            <Text style={styles.emptyText}>No beneficiaries added yet.</Text>
+          ) : (
+            beneficiaries.map((b) => (
+              <View key={b.id} style={styles.beneficiaryCard}>
+                <View>
+                  <Text style={styles.beneficiaryName}>{b.name}</Text>
+                  {!!b.relation && (
+                    <Text style={styles.beneficiaryRelation}>{b.relation}</Text>
+                  )}
+                </View>
+                <TouchableOpacity
+                  onPress={() => handleRemoveBeneficiary(b)}
+                  disabled={removingId === b.id}
+                  style={styles.removeButton}
+                >
+                  {removingId === b.id ? (
+                    <ActivityIndicator color={colors.error} size="small" />
+                  ) : (
+                    <Text style={styles.removeButtonText}>Remove</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ))
+          )}
 
-            <Text style={styles.label}>Village (Gam)</Text>
-            <TextInput
-              style={[styles.input, villageError && styles.inputError]}
-              placeholder="Your village"
-              value={village}
-              onChangeText={(text) => {
-                setVillage(text);
-                setVillageError(null);
-              }}
-              editable={!saving}
-            />
-            {villageError && (
-              <Text style={styles.errorText}>{villageError}</Text>
-            )}
-
-            {profileError && (
-              <Text style={styles.errorText}>{profileError}</Text>
-            )}
-            {saveMessage && (
-              <Text style={styles.successText}>{saveMessage}</Text>
-            )}
-
+          {!showAddForm ? (
             <TouchableOpacity
-              style={[styles.saveButton, saving && styles.buttonDisabled]}
-              onPress={handleSaveProfile}
-              disabled={saving}
+              style={styles.addToggle}
+              onPress={() => setShowAddForm(true)}
             >
-              {saving ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={styles.saveButtonText}>Save</Text>
-              )}
+              <Text style={styles.addToggleText}>+ Add beneficiary</Text>
             </TouchableOpacity>
-          </>
-        )}
-      </View>
+          ) : (
+            <View style={styles.addForm}>
+              <Text style={styles.fieldLabel}>Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Beneficiary's name"
+                value={newName}
+                onChangeText={setNewName}
+                editable={!adding}
+              />
 
-      <Text style={styles.sectionTitle}>Beneficiaries</Text>
+              <Text style={styles.fieldLabel}>Relation (optional)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Mother, Friend"
+                value={newRelation}
+                onChangeText={setNewRelation}
+                editable={!adding}
+              />
 
-      {beneficiariesLoading ? (
-        <ActivityIndicator
-          color={colors.primary}
-          style={{ marginVertical: 12 }}
-        />
-      ) : beneficiariesError ? (
-        <Text style={styles.errorText}>{beneficiariesError}</Text>
-      ) : beneficiaries.length === 0 ? (
-        <Text style={styles.emptyText}>No beneficiaries added yet.</Text>
-      ) : (
-        beneficiaries.map((b) => (
-          <View key={b.id} style={styles.beneficiaryCard}>
-            <View>
-              <Text style={styles.beneficiaryName}>{b.name}</Text>
-              {!!b.relation && (
-                <Text style={styles.beneficiaryRelation}>{b.relation}</Text>
-              )}
+              {addError && <Text style={styles.errorText}>{addError}</Text>}
+
+              <View style={styles.addFormButtons}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowAddForm(false);
+                    setNewName("");
+                    setNewRelation("");
+                    setAddError(null);
+                  }}
+                  disabled={adding}
+                >
+                  <Text style={styles.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.addSaveButton}
+                  onPress={handleAddBeneficiary}
+                  disabled={adding}
+                >
+                  {adding ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.saveButtonText}>Save</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
-            <TouchableOpacity
-              onPress={() => handleRemoveBeneficiary(b)}
-              disabled={removingId === b.id}
-              style={styles.removeButton}
-            >
-              {removingId === b.id ? (
-                <ActivityIndicator color={colors.error} size="small" />
-              ) : (
-                <Text style={styles.removeButtonText}>Remove</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        ))
-      )}
+          )}
 
-      {!showAddForm ? (
-        <TouchableOpacity
-          style={styles.addToggle}
-          onPress={() => setShowAddForm(true)}
-        >
-          <Text style={styles.addToggleText}>+ Add beneficiary</Text>
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.addForm}>
-          <TextInput
-            style={styles.input}
-            placeholder="Name"
-            value={newName}
-            onChangeText={setNewName}
-            editable={!adding}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Relation (optional, e.g. Mother)"
-            value={newRelation}
-            onChangeText={setNewRelation}
-            editable={!adding}
-          />
-          {addError && <Text style={styles.errorText}>{addError}</Text>}
+          {/* NEW: PRIVACY & TERMS SECTION */}
+          <PrivacyAndTermsSection />
 
-          <View style={styles.addFormButtons}>
-            <TouchableOpacity
-              onPress={() => {
-                setShowAddForm(false);
-                setNewName("");
-                setNewRelation("");
-                setAddError(null);
-              }}
-              disabled={adding}
-            >
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.addSaveButton}
-              onPress={handleAddBeneficiary}
-              disabled={adding}
-            >
-              {adding ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={styles.saveButtonText}>Save</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      <TouchableOpacity style={styles.logoutButton} onPress={logout}>
-        <Text style={styles.logoutText}>Log Out</Text>
-      </TouchableOpacity>
-    </ScrollView>
+          <TouchableOpacity style={styles.logoutButton} onPress={logout}>
+            <Text style={styles.logoutText}>Log Out</Text>
+          </TouchableOpacity>
+        </ResponsiveContainer>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  flex: { flex: 1 },
+  outerScroll: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 48 },
   sectionTitle: {
     fontSize: 16,
@@ -331,6 +358,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 15,
     backgroundColor: "#fff",
+    color: colors.textPrimary,
   },
   inputError: { borderColor: colors.borderError },
   errorText: { color: colors.error, fontSize: 13, marginTop: 8 },
@@ -374,12 +402,18 @@ const styles = StyleSheet.create({
     padding: 16,
     marginTop: 4,
   },
+  fieldLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 4,
+    marginTop: 4,
+  },
   addFormButtons: {
     flexDirection: "row",
     justifyContent: "flex-end",
     alignItems: "center",
     gap: 16,
-    marginTop: 8,
+    marginTop: 12,
   },
   cancelText: { color: colors.textSecondary, fontSize: 14 },
   addSaveButton: {

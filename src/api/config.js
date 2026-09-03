@@ -18,6 +18,6 @@ const USE_LOCAL_BACKEND = false;
 const LOCAL_URL = "http://192.168.1.11:8080";
 
 // Your real, permanently-live backend on Render.
-const PRODUCTION_URL = "https://clinic-booking-app-fnkk.onrender.com/";
+const PRODUCTION_URL = "https://clinic-booking-app-fnkk.onrender.com";
 
 export const API_BASE_URL = USE_LOCAL_BACKEND ? LOCAL_URL : PRODUCTION_URL;

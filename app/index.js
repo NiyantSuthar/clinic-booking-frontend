@@ -1,4 +1,4 @@
-// app/index.js - Auth Home Screen
+// app/index.js - Auth Home Screen (UPDATED)
 import { useRouter } from "expo-router";
 import { useContext, useEffect } from "react";
 import {
@@ -47,7 +47,7 @@ export default function AuthHomeScreen() {
             onPress={() => router.push("/login")}
           >
             <Text style={styles.loginButtonText}>Login</Text>
-            <Text style={styles.buttonSubtext}>
+            <Text style={styles.loginButtonSubtext}>
               Already have an account? Sign in here.
             </Text>
           </TouchableOpacity>
@@ -61,7 +61,7 @@ export default function AuthHomeScreen() {
             onPress={() => router.push("/register")}
           >
             <Text style={styles.registerButtonText}>Register</Text>
-            <Text style={styles.buttonSubtext}>
+            <Text style={styles.registerButtonSubtext}>
               New here? Create an account.
             </Text>
           </TouchableOpacity>
@@ -128,6 +128,11 @@ const styles = StyleSheet.create({
     color: "#fff",
     marginBottom: 4,
   },
+  loginButtonSubtext: {
+    fontSize: 13,
+    color: "#fff", // CHANGED: Was colors.textSecondary, now white
+    fontStyle: "italic",
+  },
   registerButton: {
     backgroundColor: "#fff",
     borderRadius: 12,
@@ -148,7 +153,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
     marginBottom: 4,
   },
-  buttonSubtext: {
+  registerButtonSubtext: {
     fontSize: 13,
     color: colors.textSecondary,
     fontStyle: "italic",

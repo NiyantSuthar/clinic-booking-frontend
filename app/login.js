@@ -1,25 +1,27 @@
-// app/login.js - Login Screen (Existing User)
-import { useRouter } from "expo-router";
+// app/login.js - Updated Login Screen
 import { useContext, useState } from "react";
+import { useRouter } from "expo-router";
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
-import { login } from "../src/api/authApi";
+import { Ionicons } from "@expo/vector-icons";
 import { AuthContext } from "../src/context/AuthContext";
 import { colors } from "../src/theme/colors";
+import { login } from "../src/api/authApi";
 
 export default function LoginScreen() {
-  const [phoneNumber, setPhoneNumber] = useState("");
+  const [identifier, setIdentifier] = useState(""); // Can be phone or username
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -28,14 +30,22 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     // Validation
-    if (!phoneNumber.trim()) {
-      setError("Phone number is required");
+    if (!identifier.trim()) {
+      setError("Phone number or username is required");
       return;
     }
-    if (!/^\d{10}$/.test(phoneNumber)) {
-      setError("Enter a valid 10-digit phone number");
+
+    // Check if it's phone or username
+    const isPhone = /^\d{10}$/.test(identifier);
+    const isAdmin = identifier.toLowerCase() === "clinicadmin";
+
+    if (!isPhone && !isAdmin) {
+      setError(
+        "Enter a valid 10-digit phone number or 'clinicadmin' for admin login"
+      );
       return;
     }
+
     if (!password.trim()) {
       setError("Password is required");
       return;
@@ -45,7 +55,8 @@ export default function LoginScreen() {
     setError(null);
 
     try {
-      const response = await login(phoneNumber, password);
+      // For admin, pass identifier as-is. For patient, it's the phone number.
+      const response = await login(identifier, password);
 
       if (response.requiresPassword) {
         // User exists but password not provided - shouldn't happen here since we provided it
@@ -64,12 +75,12 @@ export default function LoginScreen() {
               onPress: () => {
                 router.push({
                   pathname: "/register",
-                  params: { phoneNumber },
+                  params: { phoneNumber: identifier },
                 });
               },
             },
             { text: "Cancel", style: "cancel" },
-          ],
+          ]
         );
         return;
       }
@@ -79,7 +90,7 @@ export default function LoginScreen() {
         token: response.token,
         role: response.role,
         accountId: response.accountId,
-        phoneNumber: phoneNumber,
+        phoneNumber: isPhone ? identifier : null,
       });
 
       // Redirect based on role
@@ -123,40 +134,58 @@ export default function LoginScreen() {
             </View>
           )}
 
-          {/* Phone Number Input */}
+          {/* Identifier Input (Phone or Username) */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Phone Number</Text>
+            <Text style={styles.label}>Phone Number or Username</Text>
             <TextInput
               style={[styles.input, error && styles.inputError]}
-              placeholder="10-digit phone number"
+              placeholder="10-digit phone or 'clinicadmin'"
               placeholderTextColor={colors.textDisabled}
-              keyboardType="phone-pad"
-              maxLength={10}
-              value={phoneNumber}
+              keyboardType="default"
+              value={identifier}
               onChangeText={(text) => {
-                setPhoneNumber(text);
+                setIdentifier(text);
                 setError(null);
               }}
               editable={!loading}
+              autoCapitalize="none"
             />
-            <Text style={styles.hint}>Registered with this clinic</Text>
+            <Text style={styles.hint}>
+              Enter your phone number or admin username
+            </Text>
           </View>
 
-          {/* Password Input */}
+          {/* Password Input with Show/Hide Toggle */}
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={[styles.input, error && styles.inputError]}
-              placeholder="Your password"
-              placeholderTextColor={colors.textDisabled}
-              secureTextEntry={true}
-              value={password}
-              onChangeText={(text) => {
-                setPassword(text);
-                setError(null);
-              }}
-              editable={!loading}
-            />
+            <View style={styles.passwordContainer}>
+              <TextInput
+                style={[
+                  styles.passwordInput,
+                  error && styles.inputError,
+                ]}
+                placeholder="Your password"
+                placeholderTextColor={colors.textDisabled}
+                secureTextEntry={!showPassword}
+                value={password}
+                onChangeText={(text) => {
+                  setPassword(text);
+                  setError(null);
+                }}
+                editable={!loading}
+              />
+              <TouchableOpacity
+                style={styles.togglePasswordButton}
+                onPress={() => setShowPassword(!showPassword)}
+                disabled={loading}
+              >
+                <Ionicons
+                  name={showPassword ? "eye-off" : "eye"}
+                  size={20}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Login Button */}
@@ -275,6 +304,25 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontStyle: "italic",
   },
+  passwordContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    backgroundColor: "#fff",
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: colors.textPrimary,
+  },
+  togglePasswordButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
   loginButton: {
     backgroundColor: colors.primary,
     borderRadius: 8,
@@ -305,7 +353,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: colors.textPrimary,
   },
   footerLink: {
     color: colors.primary,

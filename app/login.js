@@ -1,22 +1,22 @@
 // app/login.js - Updated Login Screen
-import { useContext, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useContext, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  ActivityIndicator,
-  Alert,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { login } from "../src/api/authApi";
 import { AuthContext } from "../src/context/AuthContext";
 import { colors } from "../src/theme/colors";
-import { login } from "../src/api/authApi";
 
 export default function LoginScreen() {
   const [identifier, setIdentifier] = useState(""); // Can be phone or username
@@ -29,19 +29,22 @@ export default function LoginScreen() {
   const router = useRouter();
 
   const handleLogin = async () => {
+    // Trim the identifier to remove spaces from autofill
+    const trimmedIdentifier = identifier.trim();
+
     // Validation
-    if (!identifier.trim()) {
+    if (!trimmedIdentifier) {
       setError("Phone number or username is required");
       return;
     }
 
     // Check if it's phone or username
-    const isPhone = /^\d{10}$/.test(identifier);
-    const isAdmin = identifier.toLowerCase() === "clinicadmin";
+    const isPhone = /^\d{10}$/.test(trimmedIdentifier);
+    const isAdmin = trimmedIdentifier.toLowerCase() === "clinicadmin";
 
     if (!isPhone && !isAdmin) {
       setError(
-        "Enter a valid 10-digit phone number or 'clinicadmin' for admin login"
+        "Enter a valid 10-digit phone number or 'clinicadmin' for admin login",
       );
       return;
     }
@@ -55,17 +58,15 @@ export default function LoginScreen() {
     setError(null);
 
     try {
-      // For admin, pass identifier as-is. For patient, it's the phone number.
-      const response = await login(identifier, password);
+      // Use trimmedIdentifier in API call
+      const response = await login(trimmedIdentifier, password);
 
       if (response.requiresPassword) {
-        // User exists but password not provided - shouldn't happen here since we provided it
         setError("Invalid credentials");
         return;
       }
 
       if (response.requiresOtp) {
-        // Phone number not registered, redirect to register
         Alert.alert(
           "Not Registered",
           "This phone number is not registered. Please register first.",
@@ -75,12 +76,12 @@ export default function LoginScreen() {
               onPress: () => {
                 router.push({
                   pathname: "/register",
-                  params: { phoneNumber: identifier },
+                  params: { phoneNumber: trimmedIdentifier },
                 });
               },
             },
             { text: "Cancel", style: "cancel" },
-          ]
+          ],
         );
         return;
       }
@@ -90,7 +91,7 @@ export default function LoginScreen() {
         token: response.token,
         role: response.role,
         accountId: response.accountId,
-        phoneNumber: isPhone ? identifier : null,
+        phoneNumber: isPhone ? trimmedIdentifier : null,
       });
 
       // Redirect based on role
@@ -160,10 +161,7 @@ export default function LoginScreen() {
             <Text style={styles.label}>Password</Text>
             <View style={styles.passwordContainer}>
               <TextInput
-                style={[
-                  styles.passwordInput,
-                  error && styles.inputError,
-                ]}
+                style={[styles.passwordInput, error && styles.inputError]}
                 placeholder="Your password"
                 placeholderTextColor={colors.textDisabled}
                 secureTextEntry={!showPassword}
